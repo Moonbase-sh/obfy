@@ -38,6 +38,11 @@
 namespace obf
 {
 
+template <typename... Ts>
+inline void ignoreUnused (const Ts&...)
+{
+}
+
 // Compile time random number generator from https://github.com/andrivet/ADVobfuscator
 /*
  * Written by Sebastien Andrivet
@@ -228,7 +233,7 @@ class rvholder : public base_rvholder
 {
 public:
     rvholder(T t, T c) :base_rvholder(), v(t), check(c) {}
-    ~rvholder() = default;
+    ~rvholder() override = default;
     virtual const void* get() const override {return reinterpret_cast<const void*>(&v);}
 private:
     T v;
@@ -719,8 +724,8 @@ private:
 
 struct ObfZero { enum {value = 0}; };
 struct ObfOne { enum {value = 1}; };
-#define OBF_ZERO(t) template <> struct Num<t,0> final : public ObfZero { t v = value; t get() const { return v;}; };
-#define OBF_ONE(t) template <> struct Num<t,1> final : public ObfOne { t v = value; t get() const { return v;}; };
+#define OBF_ZERO(t) template <> struct Num<t,0> final : public ObfZero { t v = value; t get() const { return v; } };
+#define OBF_ONE(t) template <> struct Num<t,1> final : public ObfOne { t v = value; t get() const { return v; } };
 #define OBF_TYPE(t) OBF_ZERO(t) OBF_ONE(t)
 
 OBF_TYPE(bool)
@@ -782,6 +787,22 @@ OBF_TYPE(unsigned long long int)
 
 #else
 #define _JOIN(a,b) a##b
+
+#if defined(__clang__)
+#define OBF_DIAGNOSTIC_PUSH _Pragma("clang diagnostic push")
+#define OBF_DIAGNOSTIC_POP _Pragma("clang diagnostic pop")
+#define OBF_DIAGNOSTIC_IGNORE_SHADOW _Pragma("clang diagnostic ignored \"-Wshadow\"") _Pragma("clang diagnostic ignored \"-Wshadow-all\"")
+#elif defined(__GNUC__)
+#define OBF_DIAGNOSTIC_PUSH _Pragma("GCC diagnostic push")
+#define OBF_DIAGNOSTIC_POP _Pragma("GCC diagnostic pop")
+#define OBF_DIAGNOSTIC_IGNORE_SHADOW _Pragma("GCC diagnostic ignored \"-Wshadow\"")
+#else
+#define OBF_DIAGNOSTIC_PUSH
+#define OBF_DIAGNOSTIC_POP
+#define OBF_DIAGNOSTIC_IGNORE_SHADOW
+#endif
+
+#define OBF_DECLARE_LOCAL_RVHOLDER() OBF_DIAGNOSTIC_PUSH OBF_DIAGNOSTIC_IGNORE_SHADOW std::shared_ptr<obf::base_rvholder> __rvlocal; OBF_DIAGNOSTIC_POP obf::ignoreUnused(__rvlocal);
 #define N(a) (obf::Num<decltype(a), obf::MetaRandom<__COUNTER__, 4096>::value ^ a>().get() ^ obf::MetaRandom<__COUNTER__ - 1, 4096>::value)
 #define DEFINE_EXTRA(N,implementer) template <typename T> struct extra_chooser<T,N> { using type = implementer<T>; }
 DEFINE_EXTRA(0, extra_xor);
@@ -791,18 +812,18 @@ DEFINE_EXTRA(2, extra_addition);
             MAX_BOGUS_IMPLEMENTATIONS>::value >::type _JOIN(_ec_,__COUNTER__)(a);\
             return obf::stream_helper();}() << a)
 
-#define FOR(init,cond,inc) { std::shared_ptr<obf::base_rvholder> __rvlocal; obf::for_wrapper( [&](){(init); return __crv; },\
+#define FOR(init,cond,inc) { OBF_DECLARE_LOCAL_RVHOLDER() obf::for_wrapper( [&](){(init); return __crv; },\
            [&]()->bool{return (cond); }, \
            [&](){inc;return __crv;}).set_body( [&]() {
 #define ENDFOR return __crv;}).run(); }
 
 #define END return __crv;}).run(); }
 
-#define IF(x) {std::shared_ptr<obf::base_rvholder> __rvlocal; obf::if_wrapper(( [&]()->bool{ return (x); })).set_then( [&]() {
+#define IF(x) {OBF_DECLARE_LOCAL_RVHOLDER() obf::if_wrapper(( [&]()->bool{ return (x); })).set_then( [&]() {
 #define ELSE return __crv;}).set_else( [&]() {
 #define ENDIF END
 
-#define WHILE(x) {std::shared_ptr<obf::base_rvholder> __rvlocal; obf::while_wrapper([&]()->bool{ return (x); }).set_body( [&]() {
+#define WHILE(x) {OBF_DECLARE_LOCAL_RVHOLDER() obf::while_wrapper([&]()->bool{ return (x); }).set_body( [&]() {
 #define ENDWHILE END
 
 #define BREAK __crv = obf::next_step::ns_break; throw __crv;
@@ -810,7 +831,7 @@ DEFINE_EXTRA(2, extra_addition);
 
 #define RETURN(x) __rvlocal.reset(new obf::rvholder<std::remove_reference<decltype(x)>::type>(x,x));  throw __rvlocal;
 
-#define REPEAT { std::shared_ptr<obf::base_rvholder> __rvlocal; obf::repeat_wrapper().set_body( [&]() {
+#define REPEAT { OBF_DECLARE_LOCAL_RVHOLDER() obf::repeat_wrapper().set_body( [&]() {
 #define AS_LONG_AS(x) return __crv;}).set_condition([&]()->bool{ return ( (x) ); }).run(); }
 
 #define OBF_BEGIN try { obf::next_step __crv = obf::next_step::ns_done; std::shared_ptr<obf::base_rvholder> __rvlocal; (void)__crv;
